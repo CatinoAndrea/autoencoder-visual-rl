@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+.env/
+
+# Data and experiment outputs
+data/*
+!data/.gitkeep
+
+results/*
+!results/.gitkeep
+
+runs/
+tensorboard/
+wandb/
+
+# Model checkpoints
+*.zip
+*.pt
+*.pth
+*.ckpt
+
+# Videos and large media
+*.mp4
+*.avi
+*.mov
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
