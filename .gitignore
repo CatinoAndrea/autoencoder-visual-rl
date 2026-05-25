@@ -8,12 +8,15 @@ __pycache__/
 .venv/
 .env/
 
-# Data and experiment outputs
+# Data and heavy experiment outputs
 data/*
 !data/.gitkeep
 
-results/*
+results/checkpoints/
+results/logs/
+results/videos/
 !results/.gitkeep
+!results/plots/
 
 runs/
 tensorboard/
@@ -29,6 +32,12 @@ wandb/
 *.mp4
 *.avi
 *.mov
+
+# Temporary presentation exports
+presentation/*.png
+
+# Local assistant/session notes
+PROJECT_CONTEXT.txt
 
 # OS / editor
 .DS_Store
