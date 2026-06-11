@@ -1,3 +1,6 @@
+import argparse
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from stable_baselines3 import PPO
@@ -8,23 +11,23 @@ from src.envs.latent_obs_wrapper import LatentObservationWrapper
 
 
 ENV_ID = "CarRacing-v3"
-RUN_NAME = "v3"
 N_ENVS = 2
 TRAIN_TIMESTEPS = 2_000_000
 EVAL_FREQ = 10_000
 N_EVAL_EPISODES = 5
 DEVICE = "cpu"
-LEARNING_RATE = 3e-4
+LEARNING_RATE = 1e-4
+EVAL_SEED = 10_000
 
-AUTOENCODER_CHECKPOINT_PATH = Path("results/checkpoints/autoencoder/autoencoder_latent128.pt")
-LOG_DIR = Path("results/logs/latent")
-MODEL_DIR = Path("results/checkpoints/latent")
 
+AUTOENCODER_CHECKPOINT_PATH = Path(
+    "results/shared/autoencoder/autoencoder_latent128.pt"
+)
+
+RESULTS_DIR = Path("results/main")
+
+# Fine-tuning starts from an existing latent PPO checkpoint.
 START_MODEL_PATH = None
-
-# Final checkpoint from this run. The best evaluated checkpoint is saved separately.
-FINAL_MODEL_PATH = MODEL_DIR / f"last_ppo_CarRacing_{RUN_NAME}.zip"
-BEST_MODEL_DIR = MODEL_DIR / f"best_model_{RUN_NAME}"
 
 ENV_KWARGS = {
     "render_mode": "rgb_array",
@@ -41,7 +44,61 @@ def make_latent_env():
     )
     return env
 
-def load_or_create_model(train_env):
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train latent-observation PPO.")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Training seed and run identifier.",
+    )
+    return parser.parse_args()
+
+
+def build_run_paths(train_seed):
+    run_dir = RESULTS_DIR / "latent" / f"seed_{train_seed}"
+    return {
+        "run_dir": run_dir,
+        "train_log_dir": run_dir / "train_logs",
+        "eval_log_dir": run_dir / "eval_logs",
+        "checkpoint_dir": run_dir / "checkpoints",
+        "final_model_path": run_dir / "checkpoints" / "final_model.zip",
+        "best_model_dir": run_dir / "checkpoints" / "best",
+    }
+
+
+def ensure_new_run(run_dir):
+    if run_dir.exists() and any(run_dir.rglob("*")):
+        raise FileExistsError(
+            f"Run directory is not empty: {run_dir}. "
+            "Use a new seed or archive the existing run."
+        )
+
+
+def save_config(run_dir, train_seed):
+    config = {
+        "agent_type": "latent",
+        "run_name": f"seed_{train_seed}",
+        "train_seed": train_seed,
+        "eval_seed": EVAL_SEED,
+        "environment": ENV_ID,
+        "environment_kwargs": ENV_KWARGS,
+        "n_envs": N_ENVS,
+        "train_timesteps": TRAIN_TIMESTEPS,
+        "eval_freq_callback_calls": EVAL_FREQ,
+        "effective_eval_interval_timesteps": EVAL_FREQ * N_ENVS,
+        "n_eval_episodes": N_EVAL_EPISODES,
+        "learning_rate": LEARNING_RATE,
+        "device": DEVICE,
+        "policy": "MlpPolicy",
+        "autoencoder_checkpoint": str(AUTOENCODER_CHECKPOINT_PATH),
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    with (run_dir / "config.json").open("w", encoding="utf-8") as file:
+        json.dump(config, file, indent=2)
+
+
+def load_or_create_model(train_env, train_seed):
     """Load an existing latent PPO checkpoint, or create a new latent PPO model."""
     if START_MODEL_PATH is not None and START_MODEL_PATH.exists():
         print(f"Loading fine-tuning start model from {START_MODEL_PATH}")
@@ -57,39 +114,47 @@ def load_or_create_model(train_env):
         verbose=1,
         device=DEVICE,
         learning_rate=LEARNING_RATE,
+        seed=train_seed,
     )
     return model, False
 
 
-def main():
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    BEST_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+def main(train_seed):
+    paths = build_run_paths(train_seed)
+    ensure_new_run(paths["run_dir"])
+
+    paths["train_log_dir"].mkdir(parents=True, exist_ok=True)
+    paths["eval_log_dir"].mkdir(parents=True, exist_ok=True)
+    paths["checkpoint_dir"].mkdir(parents=True, exist_ok=True)
+    paths["best_model_dir"].mkdir(parents=True, exist_ok=True)
+    save_config(paths["run_dir"], train_seed)
 
     train_env = make_vec_env(
         make_latent_env,
         n_envs=N_ENVS,
-        monitor_dir=LOG_DIR / "train" / RUN_NAME,
+        seed=train_seed,
+        monitor_dir=paths["train_log_dir"],
     )
 
     eval_env = make_vec_env(
         make_latent_env,
         n_envs=1,
-        monitor_dir=LOG_DIR / "eval" / RUN_NAME,
+        seed=EVAL_SEED,
+        monitor_dir=paths["eval_log_dir"],
     )
 
     # The evaluation environment is separate from training so the saved best model
     # is selected using deterministic evaluation, not noisy rollout rewards.
     eval_callback = EvalCallback(
         eval_env,
-        best_model_save_path=BEST_MODEL_DIR,
-        log_path=LOG_DIR / "eval" / RUN_NAME,
+        best_model_save_path=paths["best_model_dir"],
+        log_path=paths["eval_log_dir"],
         eval_freq=EVAL_FREQ,
         n_eval_episodes=N_EVAL_EPISODES,
         deterministic=True,
     )
 
-    model, model_exists = load_or_create_model(train_env)
+    model, model_exists = load_or_create_model(train_env, train_seed)
 
     try:
         model.learn(
@@ -98,11 +163,12 @@ def main():
             callback=eval_callback,
         )
 
-        model.save(FINAL_MODEL_PATH)
+        model.save(paths["final_model_path"])
     finally:
         train_env.close()
         eval_env.close()
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args.seed)

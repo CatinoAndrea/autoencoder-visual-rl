@@ -1,157 +1,135 @@
 # Autoencoder-Based Visual Reinforcement Learning in CarRacing-v3
 
-University AI Lab project comparing two Visual Reinforcement Learning pipelines on
-`Gymnasium CarRacing-v3`:
+University AI-LAB project comparing two visual reinforcement learning pipelines:
 
-1. **Raw-pixel PPO**: PPO learns directly from RGB frames with `CnnPolicy`.
-2. **Latent PPO**: PPO receives a 128-dimensional latent vector produced by a
-   frozen CNN autoencoder encoder and uses `MlpPolicy`.
+1. **Raw-pixel PPO** uses Stable-Baselines3 `CnnPolicy` on RGB observations.
+2. **Latent PPO** uses `MlpPolicy` on a frozen 128-dimensional autoencoder
+   representation.
 
-The project is research-oriented: the goal is not to reach state-of-the-art
-performance, but to evaluate whether an autoencoder-learned visual
-representation improves sample efficiency, reward stability, and final policy
-performance compared to direct raw-pixel training.
+The project evaluates whether offline visual pretraining improves PPO sample
+efficiency and performance under a controlled multi-seed protocol.
 
-## Research Question
-
-Does an autoencoder-learned latent representation improve PPO training compared
-to learning directly from raw pixels in Visual Reinforcement Learning?
-
-The comparison focuses on:
-
-- mean evaluation reward;
-- best and final evaluation reward;
-- learning curve behaviour;
-- reward stability;
-- qualitative autoencoder reconstruction quality.
-
-## Project Structure
+## Structure
 
 ```text
-.
-├── data/                    # Local frame dataset, ignored by git
-├── report/                  # Final report in Markdown
-├── presentation/            # Final presentation PDF
-├── results/                 # Local logs, plots, checkpoints, ignored by git
-├── scripts/                 # Runnable training, evaluation, plotting scripts
-└── src/                     # Reusable project code
-    ├── callbacks/           # Stable-Baselines3 callbacks
-    ├── data/                # PyTorch frame dataset
-    ├── envs/                # CarRacing and latent observation wrappers
-    └── models/              # CNN autoencoder model
+data/                 Local frame dataset
+report/               LaTeX paper and final PDF
+presentation/         Final PowerPoint presentation
+results/              Local checkpoints, logs and generated plots
+scripts/              Training, evaluation and plotting entry points
+src/                  Models, environments, callbacks and datasets
 ```
 
-Important files:
+Main entry points:
 
-- `scripts/train.py`: trains raw-pixel PPO with `CnnPolicy`.
-- `scripts/train_latent.py`: trains latent PPO with frozen encoder + `MlpPolicy`.
-- `scripts/train_autoencoder.py`: trains the CNN autoencoder on saved frames.
-- `scripts/plot.py`: generates PPO training/evaluation plots.
-- `scripts/plot_autoencoder.py`: generates reconstruction and loss plots.
-- `src/envs/latent_obs_wrapper.py`: converts RGB observations into latent vectors.
-- `src/models/autoencoder.py`: CNN autoencoder architecture.
-- `report/report.md`: technical report.
-- `presentation/autoencoder_visual_rl_presentation.pdf`: final slide deck.
+- `scripts/train.py`: raw-pixel PPO and optional frame collection.
+- `scripts/train_autoencoder.py`: two-session autoencoder training.
+- `scripts/train_latent.py`: PPO on frozen latent observations.
+- `scripts/eval.py`: visual evaluation of a saved raw or latent policy.
+- `scripts/plot.py`: per-run and multi-seed PPO plots.
+- `scripts/plot_autoencoder.py`: autoencoder loss and reconstruction plots.
 
 ## Setup
 
-The project was developed with Python 3.11.
-
-Create and activate a clean environment:
+The experiments used Python 3.11, Gymnasium 1.2.3 and Stable-Baselines3 2.8.0.
 
 ```powershell
 conda create -n vrl python=3.11
 conda activate vrl
 python -m pip install --upgrade pip
-```
-
-For a CUDA-enabled PyTorch installation, install PyTorch from the official
-PyTorch index matching your CUDA version. For example, on the development
-machine:
-
-```powershell
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu132
-```
-
-Then install the remaining dependencies:
-
-```powershell
 pip install -r requirements.txt
 ```
 
-If GPU support is not needed, the standard CPU PyTorch installation is enough.
+A CPU PyTorch installation can be used when CUDA is unavailable, although raw
+PPO training will be slower.
 
-## Running the Experiments
+## Reproduction
 
-Run commands from the project root.
+Run every command from the repository root.
 
-Train the raw-pixel PPO baseline:
+### 1. Collect Frames
 
-```powershell
-python -m scripts.train
-```
-
-Train the autoencoder:
+Frame collection is integrated into raw PPO training:
 
 ```powershell
-python -m scripts.train_autoencoder
+python -m scripts.train --seed 42 --save-frames
 ```
 
-Train PPO on latent observations:
+Frames are written to `data/frames`. The submitted experimental dataset contains
+18,293 RGB PNG frames. Because `data/` is intentionally ignored by Git, it must
+be included separately when full autoencoder retraining is required.
+
+### 2. Train the Autoencoder
 
 ```powershell
-python -m scripts.train_latent
+python -m scripts.train_autoencoder --overwrite
 ```
 
-Generate PPO plots:
+The script reproduces the training protocol used in the project:
+
+- fixed seed 42 and fixed 90/10 split;
+- latent dimension 128;
+- batch size 128;
+- Adam with learning rate `1e-4`;
+- two consecutive sessions of 20 epochs;
+- model weights retained and Adam reinitialized before the second session.
+
+The checkpoint and configuration are saved under
+`results/shared/autoencoder/`. The repository includes the checkpoint used by
+the experiments, so `--overwrite` is required for intentional full retraining.
+Without that flag, the script protects the supplied model from accidental
+replacement.
+
+The shared autoencoder checkpoint is retained with the code because latent PPO
+training and evaluation require it. Raw/latent PPO run directories, logs and
+generated plots remain excluded from version control.
+
+### 3. Train PPO
 
 ```powershell
-python -m scripts.plot
+python -m scripts.train --seed 42
+python -m scripts.train --seed 123
+python -m scripts.train --seed 456
+
+python -m scripts.train_latent --seed 42
+python -m scripts.train_latent --seed 123
+python -m scripts.train_latent --seed 456
 ```
 
-Generate autoencoder plots:
+Each run uses two environments, two million timesteps, learning rate `1e-4`,
+five deterministic evaluation episodes every 20,000 aggregate timesteps, and
+evaluation base seed 10,000.
+
+### 4. Generate Results
 
 ```powershell
 python -m scripts.plot_autoencoder
+python -m scripts.plot
 ```
-
-Evaluate a trained PPO checkpoint:
-
-```powershell
-python -m scripts.eval
-```
-
-## Method Summary
-
-The autoencoder is trained offline on RGB frames saved during CarRacing
-interaction. The encoder compresses each `96 x 96 x 3` frame into a
-128-dimensional latent vector. During latent PPO training, a Gymnasium
-observation wrapper applies the same preprocessing used during autoencoder
-training and replaces each RGB observation with the frozen encoder output.
-
-The raw-pixel baseline uses Stable-Baselines3 PPO with `CnnPolicy`, while the
-latent agent uses PPO with `MlpPolicy`.
 
 ## Main Results
 
-| Run | Input | Learning rate | Best eval reward | Final eval reward |
-|---|---|---:|---:|---:|
-| raw/v0 | RGB pixels | 3e-4 | **927.78** | 213.84 |
-| raw/v2 | RGB pixels | 1e-4 | 796.82 | 531.41 |
-| latent/v1 | latent 128 | 1e-4 | 899.65 | 504.64 |
-| latent/v2 | latent 128 | 1e-4 | 842.06 | **805.81** |
-| latent/v3 | latent 128 | 3e-4 | 739.18 | 617.91 |
+Mean and standard deviation across training seeds 42, 123 and 456:
 
-The results are nuanced. Raw-pixel PPO can reach very high peak performance, but
-some runs degrade strongly after reaching a good policy. Latent PPO is
-competitive and one latent run achieved the best final evaluation reward, but
-the latent representation did not consistently improve sample efficiency.
+| Metric | Raw PPO | Latent PPO | Difference |
+|---|---:|---:|---:|
+| Best evaluation reward | 798.1 +/- 71.7 | **882.4 +/- 40.5** | +10.6% |
+| Final five-evaluation mean | 459.2 +/- 211.3 | **685.1 +/- 127.4** | +49.2% |
+| Normalized learning-curve AUC | 377.8 +/- 120.0 | **567.5 +/- 134.5** | +50.2% |
+| Steps to reward 700 | 960k +/- 529k | **520k +/- 394k** | -45.8% |
 
-## Version-Control Notes
+Latent PPO performed better on all predefined aggregate metrics, while both
+methods retained substantial variability across seeds.
 
-Generated data, model checkpoints, logs, plots, videos, and temporary slide
-exports are ignored by git. This keeps the repository lightweight. The report
-and final presentation PDF are tracked.
+## Final Materials
 
-To reproduce plots or continue training, regenerate local outputs by running the
-scripts above.
+- Paper source: `report/autoencoder_visual_rl_report.tex`
+- Paper PDF: `report/autoencoder_visual_rl_report.pdf`
+- Presentation: the `.pptx` file in `presentation/`
+
+Large datasets, PPO checkpoints, logs and generated plots are intentionally
+excluded from version control. The frozen autoencoder checkpoint is the only
+model artifact retained because it is a required input to the latent pipeline.
+Configuration JSON files inside completed runs record the parameters used for
+the controlled benchmark.

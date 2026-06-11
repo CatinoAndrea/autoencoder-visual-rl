@@ -1,2 +1,0 @@
-episodes,total_completed_timesteps,mean_reward_all,std_reward_all,mean_reward_last_window,std_reward_last_window,best_reward,mean_episode_length_all,mean_episode_length_last_window
-2032,2002351,484.7353829596457,281.09344356231674,579.4011349,283.1284195344371,939.4,985.4089566929134,899.8

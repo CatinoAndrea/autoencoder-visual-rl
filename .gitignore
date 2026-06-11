@@ -12,11 +12,14 @@ __pycache__/
 data/*
 !data/.gitkeep
 
-results/checkpoints/
-results/logs/
-results/videos/
+results/*
 !results/.gitkeep
-!results/plots/
+!results/shared/
+results/shared/*
+!results/shared/autoencoder/
+results/shared/autoencoder/*
+!results/shared/autoencoder/autoencoder_latent128.pt
+!results/shared/autoencoder/config.json
 
 runs/
 tensorboard/
@@ -44,6 +47,9 @@ PROJECT_CONTEXT.txt
 Thumbs.db
 .vscode/
 .idea/
+
+# Required pretrained artifact for the latent pipeline
+!results/shared/autoencoder/autoencoder_latent128.pt
 
 
 ppo_CarRacing.zip

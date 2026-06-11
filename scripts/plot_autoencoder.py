@@ -8,8 +8,8 @@ from src.models.autoencoder import ConvAutoencoder
 
 
 FRAME_DIR = Path("data/frames")
-CHECKPOINT_PATH = Path("results/checkpoints/autoencoder/autoencoder_latent128.pt")
-PLOT_DIR = Path("results/plots/autoencoder")
+CHECKPOINT_PATH = Path("results/shared/autoencoder/autoencoder_latent128.pt")
+PLOT_DIR = Path("results/shared/autoencoder/plots")
 DEVICE = "cuda"
 NUM_RECONSTRUCTIONS = 8
 
